@@ -20,7 +20,7 @@ export default function AdminPanel({ token, currentUser, onLogout, users, onRefr
     setBusy(true);
     setStatus('');
     try {
-      await apiFetch('/api/admin/users', {
+      await apiFetch('/admin/users', {
         token,
         method: 'POST',
         body: {
@@ -44,7 +44,7 @@ export default function AdminPanel({ token, currentUser, onLogout, users, onRefr
     setBusy(true);
     setStatus('');
     try {
-      await apiFetch(`/api/admin/users/${id}`, {
+      await apiFetch(`/admin/users/${id}`, {
         token,
         method: 'PATCH',
         body: patch
@@ -63,7 +63,7 @@ export default function AdminPanel({ token, currentUser, onLogout, users, onRefr
     setBusy(true);
     setStatus('');
     try {
-      await apiFetch(`/api/admin/users/${id}`, { token, method: 'DELETE' });
+      await apiFetch(`/admin/users/${id}`, { token, method: 'DELETE' });
       setStatus('User deleted.');
       await refresh();
     } catch (err) {
@@ -77,7 +77,7 @@ export default function AdminPanel({ token, currentUser, onLogout, users, onRefr
     setBusy(true);
     setStatus('');
     try {
-      await apiFetch(`/api/admin/users/${u.id}/${u.enabled ? 'disable' : 'enable'}`, {
+      await apiFetch(`/admin/users/${u.id}/${u.enabled ? 'disable' : 'enable'}`, {
         token,
         method: 'POST'
       });

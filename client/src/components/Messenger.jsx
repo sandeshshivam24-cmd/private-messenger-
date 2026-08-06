@@ -121,12 +121,12 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const publishPublicKey = async () => {
     if (!identityRef.current) return;
     try {
-      await apiFetch('/api/keys', { token, method: 'POST', body: { publicKey: identityRef.current.publicJwk } });
+      await apiFetch('/keys', { token, method: 'POST', body: { publicKey: identityRef.current.publicJwk } });
     } catch { }
   };
 
   const refreshContacts = async () => {
-    const data = await apiFetch('/api/contacts', { token });
+    const data = await apiFetch('/contacts', { token });
     setContacts(data.contacts || []);
   };
 
@@ -136,7 +136,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
     if (cached) setMessages(cached);
     setLoadingChat(!cached);
     try {
-      const data = await apiFetch(`/api/conversations/${userId}`, { token });
+      const data = await apiFetch(`/conversations/${userId}`, { token });
       const decrypted = await Promise.all((data.messages || []).map(async (msg) => {
         let payload = { kind: msg.type || 'text', text: '' };
         try {
@@ -179,7 +179,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
 
   const logout = async () => {
     try {
-      await apiFetch('/api/logout', { token, method: 'POST' });
+      await apiFetch('/logout', { token, method: 'POST' });
     } catch { }
     if (socketRef.current) {
       socketRef.current.emit('logout');
