@@ -4,6 +4,7 @@ import http from 'http';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { Server } from 'socket.io';
 import {
   ensureStore,
