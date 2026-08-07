@@ -1,0 +1,91 @@
+{
+  "users": [
+    {
+      "id": "u_admin",
+      "username": "admin",
+      "displayName": "Admin",
+      "passwordHash": "$2a$10$yyezy09rL/ePcoQvQzz1Yuhu6Jf/IABUWaft4LZJQQK.R.1vJhMeO",
+      "role": "admin",
+      "enabled": true,
+      "online": false,
+      "lastSeen": null,
+      "sessionId": null,
+      "initials": "AD",
+      "showLastSeen": true,
+      "publicKey": null
+    },
+    {
+      "id": "u_rahul",
+      "username": "rahul01",
+      "displayName": "Rahul",
+      "passwordHash": "$2a$10$zjYz5UWGhHvezJODzs7DQO6qq0UP6sbiwJNCh2Mi03UMVYooBy7c.",
+      "role": "user",
+      "enabled": true,
+      "online": false,
+      "lastSeen": "2026-08-07T05:38:14.190Z",
+      "sessionId": null,
+      "initials": "RA",
+      "showLastSeen": true,
+      "publicKey": null
+    },
+    {
+      "id": "u_aman",
+      "username": "aman01",
+      "displayName": "Aman",
+      "passwordHash": "$2a$10$ZUrTi3vjrPuOUmavefttB.SBKNsZBSjS19U/vBdgBexWNkyNkysty",
+      "role": "user",
+      "enabled": true,
+      "online": false,
+      "lastSeen": "2026-08-07T05:38:14.190Z",
+      "sessionId": null,
+      "initials": "AM",
+      "showLastSeen": true,
+      "publicKey": null
+    },
+    {
+      "id": "u_neha",
+      "username": "neha01",
+      "displayName": "Neha",
+      "passwordHash": "$2a$10$N7Ka2rSudodrgrgDa9Xrzu9rv3OuuhnOXgILXaXjdZrO22uPKD9oe",
+      "role": "user",
+      "enabled": true,
+      "online": false,
+      "lastSeen": "2026-08-07T05:38:14.190Z",
+      "sessionId": null,
+      "initials": "NE",
+      "showLastSeen": true,
+      "publicKey": null
+    },
+    {
+      "id": "u_vivek",
+      "username": "vivek01",
+      "displayName": "Vivek",
+      "passwordHash": "$2a$10$SXelACcxkMMjG80OAe0o9es2cBl5pD3OUB2l4WRcvu9t1PUeMB916",
+      "role": "user",
+      "enabled": true,
+      "online": false,
+      "lastSeen": "2026-08-07T05:38:14.190Z",
+      "sessionId": null,
+      "initials": "VI",
+      "showLastSeen": true,
+      "publicKey": null
+    },
+    {
+      "id": "u_kajal",
+      "username": "kajal01",
+      "displayName": "Kajal",
+      "passwordHash": "$2a$10$iHa9hf5s8AIFfcm6G0twUuekAoJ3/2IoC9c9.w6bDtwQ82KtSoReK",
+      "role": "user",
+      "enabled": true,
+      "online": false,
+      "lastSeen": "2026-08-07T05:38:14.190Z",
+      "sessionId": null,
+      "initials": "KA",
+      "showLastSeen": true,
+      "publicKey": null
+    }
+  ],
+  "messages": [],
+  "nextUserId": 7,
+  "nextMessageId": 1
+}
