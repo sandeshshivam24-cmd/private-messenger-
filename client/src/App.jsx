@@ -25,7 +25,7 @@ export default function App() {
   const publishPublicKey = async (tok, username) => {
     try {
       const { publicJwk } = await getOrCreateIdentity(username);
-      await apiFetch('/api/keys', {
+      await apiFetch('/keys', {
         token: tok,
         method: 'POST',
         body: { publicKey: publicJwk }
@@ -99,7 +99,7 @@ export default function App() {
 
   const refreshAdminUsers = async () => {
     if (!token || currentUser?.role !== 'admin') return;
-    const data = await apiFetch('/api/admin/users', { token });
+    const data = await apiFetch('/admin/users', { token });
     setAdminUsers(data.users || []);
   };
 
