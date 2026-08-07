@@ -947,109 +947,109 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, remoteAudioRef }) {
       </div>
     </div>
   );
-  function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, startReply, copyMessage, startEdit, deleteMessage, formatFileSize }) {
-    const [dragX, setDragX] = useState(0);
-    const startXRef = useRef(0);
-    const draggingRef = useRef(false);
-    const SWIPE_THRESHOLD = 55;
-    const MAX_DRAG = 80;
+}
+function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, startReply, copyMessage, startEdit, deleteMessage, formatFileSize }) {
+  const [dragX, setDragX] = useState(0);
+  const startXRef = useRef(0);
+  const draggingRef = useRef(false);
+  const SWIPE_THRESHOLD = 55;
+  const MAX_DRAG = 80;
 
-    const onTouchStart = (e) => {
-      startXRef.current = e.touches[0].clientX;
-      draggingRef.current = true;
-    };
+  const onTouchStart = (e) => {
+    startXRef.current = e.touches[0].clientX;
+    draggingRef.current = true;
+  };
 
-    const onTouchMove = (e) => {
-      if (!draggingRef.current) return;
-      const delta = e.touches[0].clientX - startXRef.current;
-      // "theirs" bubbles swipe right → reply icon on left; "mine" bubbles swipe left → icon on right
-      const clamped = mine
-        ? Math.max(-MAX_DRAG, Math.min(0, delta))
-        : Math.max(0, Math.min(MAX_DRAG, delta));
-      setDragX(clamped);
-    };
+  const onTouchMove = (e) => {
+    if (!draggingRef.current) return;
+    const delta = e.touches[0].clientX - startXRef.current;
+    // "theirs" bubbles swipe right → reply icon on left; "mine" bubbles swipe left → icon on right
+    const clamped = mine
+      ? Math.max(-MAX_DRAG, Math.min(0, delta))
+      : Math.max(0, Math.min(MAX_DRAG, delta));
+    setDragX(clamped);
+  };
 
-    const onTouchEnd = () => {
-      draggingRef.current = false;
-      if (Math.abs(dragX) >= SWIPE_THRESHOLD) {
-        startReply(m);
-      }
-      setDragX(0);
-    };
+  const onTouchEnd = () => {
+    draggingRef.current = false;
+    if (Math.abs(dragX) >= SWIPE_THRESHOLD) {
+      startReply(m);
+    }
+    setDragX(0);
+  };
 
-    const showReplyIcon = Math.abs(dragX) > 12;
+  const showReplyIcon = Math.abs(dragX) > 12;
 
-    return (
-      <div
-        className={`bubble-row ${mine ? 'mine' : 'theirs'}`}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-        style={{ position: 'relative' }}
-      >
-        {showReplyIcon ? (
-          <span
-            className="swipe-reply-icon"
-            style={{
-              opacity: Math.min(1, Math.abs(dragX) / SWIPE_THRESHOLD),
-              [mine ? 'right' : 'left']: `${Math.abs(dragX) + 6}px`
-            }}
-          >
-            ↩
-          </span>
-        ) : null}
-
-        <div
-          className={`bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}
-          onClick={() => setActiveMenuId(activeMenuId === m.id ? null : m.id)}
+  return (
+    <div
+      className={`bubble-row ${mine ? 'mine' : 'theirs'}`}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      style={{ position: 'relative' }}
+    >
+      {showReplyIcon ? (
+        <span
+          className="swipe-reply-icon"
           style={{
-            transform: `translateX(${dragX}px)`,
-            transition: draggingRef.current ? 'none' : 'transform .18s ease'
+            opacity: Math.min(1, Math.abs(dragX) / SWIPE_THRESHOLD),
+            [mine ? 'right' : 'left']: `${Math.abs(dragX) + 6}px`
           }}
         >
-          {m.replyTo ? (
-            <div className="reply-preview">
-              <span className="reply-who">{m.replyTo.fromMe === m.mine ? 'You' : (m.mine ? selectedContact.displayName : 'You')}</span>
-              <span className="reply-text">{m.replyTo.preview}</span>
-            </div>
-          ) : null}
+          ↩
+        </span>
+      ) : null}
 
-          {m.payloadKind === 'photo' ? (
-            <img src={m.content} alt={m.fileName || 'photo'} className="bubble-image" />
-          ) : m.payloadKind === 'document' ? (
-            <a
-              href={m.content}
-              download={m.fileName || 'file'}
-              className="file-card"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="file-icon">📄</span>
-              <span className="file-info">
-                <span className="file-name">{m.fileName || 'Document'}</span>
-                <span className="file-size">{formatFileSize(m.fileSize)} · Tap to download</span>
-              </span>
-            </a>
-          ) : (
-            <div>{m.content}</div>
-          )}
-
-          <div className="bubble-meta">
-            {m.edited ? <span className="edited-tag">edited</span> : null}
-            <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            {m.mine ? <span>{m.seenAt ? 'Seen' : 'Sent'}</span> : null}
+      <div
+        className={`bubble ${mine ? 'bubble-mine' : 'bubble-theirs'}`}
+        onClick={() => setActiveMenuId(activeMenuId === m.id ? null : m.id)}
+        style={{
+          transform: `translateX(${dragX}px)`,
+          transition: draggingRef.current ? 'none' : 'transform .18s ease'
+        }}
+      >
+        {m.replyTo ? (
+          <div className="reply-preview">
+            <span className="reply-who">{m.replyTo.fromMe === m.mine ? 'You' : (m.mine ? selectedContact.displayName : 'You')}</span>
+            <span className="reply-text">{m.replyTo.preview}</span>
           </div>
+        ) : null}
 
-          {activeMenuId === m.id ? (
-            <div className="msg-actions" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => startReply(m)}>↩ Reply</button>
-              {m.payloadKind === 'text' ? <button onClick={() => copyMessage(m)}>⧉ Copy</button> : null}
-              {m.mine && m.payloadKind === 'text' ? <button onClick={() => startEdit(m)}>✎ Edit</button> : null}
-              {m.mine ? <button onClick={() => deleteMessage(m, 'everyone')}>🗑 Delete for everyone</button> : null}
-              <button onClick={() => deleteMessage(m, 'me')}>🗑 Delete for me</button>
-            </div>
-          ) : null}
+        {m.payloadKind === 'photo' ? (
+          <img src={m.content} alt={m.fileName || 'photo'} className="bubble-image" />
+        ) : m.payloadKind === 'document' ? (
+          <a
+            href={m.content}
+            download={m.fileName || 'file'}
+            className="file-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="file-icon">📄</span>
+            <span className="file-info">
+              <span className="file-name">{m.fileName || 'Document'}</span>
+              <span className="file-size">{formatFileSize(m.fileSize)} · Tap to download</span>
+            </span>
+          </a>
+        ) : (
+          <div>{m.content}</div>
+        )}
+
+        <div className="bubble-meta">
+          {m.edited ? <span className="edited-tag">edited</span> : null}
+          <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+          {m.mine ? <span>{m.seenAt ? 'Seen' : 'Sent'}</span> : null}
         </div>
+
+        {activeMenuId === m.id ? (
+          <div className="msg-actions" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => startReply(m)}>↩ Reply</button>
+            {m.payloadKind === 'text' ? <button onClick={() => copyMessage(m)}>⧉ Copy</button> : null}
+            {m.mine && m.payloadKind === 'text' ? <button onClick={() => startEdit(m)}>✎ Edit</button> : null}
+            {m.mine ? <button onClick={() => deleteMessage(m, 'everyone')}>🗑 Delete for everyone</button> : null}
+            <button onClick={() => deleteMessage(m, 'me')}>🗑 Delete for me</button>
+          </div>
+        ) : null}
       </div>
-    );
-  }
+    </div>
+  );
 }
