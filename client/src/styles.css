@@ -799,20 +799,23 @@ input {
 
   .messenger-shell {
     display: block;
-    height: 100vh;
-  }
-
-  .contacts-panel {
-    width: 100%;
     height: 100dvh;
-    max-height: none;
-    border: none;
+    overflow: hidden;
+    /* page ko scroll hone se roko */
+    position: relative;
   }
 
+  .contacts-panel,
   .chat-panel {
-    width: 100%;
+    position: absolute;
+    inset: 0;
     height: 100dvh;
-    min-height: 100dvh;
+  }
+
+  /* jab chat open ho to contacts panel hide karo */
+  .contacts-panel.mobile-hide,
+  .chat-panel.mobile-hide {
+    display: none;
   }
 
   .chat-head {
