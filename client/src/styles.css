@@ -799,7 +799,7 @@ input {
 
   .messenger-shell {
     display: block;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     overflow: hidden;
     /* page ko scroll hone se roko */
     position: relative;
@@ -809,7 +809,7 @@ input {
   .chat-panel {
     position: absolute;
     inset: 0;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
   }
 
   /* jab chat open ho to contacts panel hide karo */
@@ -826,6 +826,16 @@ input {
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+
+  .swipe-reply-icon {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 20px;
+    color: var(--accent);
+    pointer-events: none;
+    transition: opacity .1s ease;
   }
 
 }

@@ -136,4 +136,12 @@ export default function App() {
       onLogout={clearAuth}
     />
   );
+  function setAppHeight() {
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-height', `${vh}px`);
+  }
+
+  window.addEventListener('resize', setAppHeight);
+  window.visualViewport?.addEventListener('resize', setAppHeight);
+  setAppHeight();
 }
