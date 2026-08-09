@@ -62,6 +62,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const pendingCallIdRef = useRef(null);
   const callTimerRef = useRef(null);
   const callStateRef = useRef(null);
+  const iceQueueRef = useRef([]);
   const selectedIdRef = useRef(null);
   const mobileChatOpenRef = useRef(false);
   const isMobileRef = useRef(window.innerWidth <= 768);
@@ -88,6 +89,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [viewingImage, setViewingImage] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [showCallMenu, setShowCallMenu] = useState(false);
 
   const selectedContact = useMemo(
     () => contacts.find((u) => u.id === selectedId) || null,
@@ -110,6 +112,39 @@ export default function Messenger({ token, currentUser, onLogout }) {
     if (selectedIdRef.current !== peerId) return false;
     if (isMobileRef.current && !mobileChatOpenRef.current) return false;
     return true;
+  };
+
+  const appendMessage = (peerId, newMsg) => {
+    if (!peerId || !newMsg || !newMsg.id) return;
+    const bucket = messagesByPeerRef.current.get(peerId) || [];
+    if (!bucket.some((m) => m.id === newMsg.id)) {
+      messagesByPeerRef.current.set(peerId, [...bucket, newMsg]);
+    } else {
+      messagesByPeerRef.current.set(
+        peerId,
+        bucket.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m))
+      );
+    }
+
+    if (selectedIdRef.current === peerId) {
+      setMessages((prev) => {
+        if (!prev.some((m) => m.id === newMsg.id)) {
+          return [...prev, newMsg];
+        }
+        return prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m));
+      });
+    }
+  };
+
+  const updateMessage = (peerId, oldId, updatedMsg) => {
+    if (!peerId || !oldId) return;
+    const bucket = messagesByPeerRef.current.get(peerId) || [];
+    const newBucket = bucket.map((m) => (m.id === oldId ? { ...m, ...updatedMsg } : m));
+    messagesByPeerRef.current.set(peerId, newBucket);
+
+    if (selectedIdRef.current === peerId) {
+      setMessages((prev) => prev.map((m) => (m.id === oldId ? { ...m, ...updatedMsg } : m)));
+    }
   };
 
   useEffect(() => {
@@ -227,9 +262,11 @@ export default function Messenger({ token, currentUser, onLogout }) {
       clearTimeout(callTimerRef.current);
       callTimerRef.current = null;
     }
+    iceQueueRef.current = [];
     if (pcRef.current) {
       pcRef.current.ontrack = null;
       pcRef.current.onicecandidate = null;
+      pcRef.current.oniceconnectionstatechange = null;
       pcRef.current.close();
       pcRef.current = null;
     }
@@ -261,7 +298,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
     cleanupCall();
   };
 
-  const ensurePeerConnection = async (peerId) => {
+  const ensurePeerConnection = async (peerId, callType = 'video') => {
     if (pcRef.current) return pcRef.current;
 
     const pc = new RTCPeerConnection({
@@ -290,16 +327,27 @@ export default function Messenger({ token, currentUser, onLogout }) {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setCallState((prev) => (prev ? { ...prev, mode: 'active' } : prev));
+      }
+    };
+
+    const isVideo = callType === 'video';
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: isVideo });
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
+      if (isVideo && localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     } catch (err) {
-      console.warn("Camera/Mic getUserMedia error:", err);
-      throw new Error('Camera or microphone permission is required for a video call.');
+      console.warn("getUserMedia error:", err);
+      throw new Error(
+        isVideo
+          ? 'Camera or microphone permission is required for a video call.'
+          : 'Microphone permission is required for an audio call.'
+      );
     }
 
     pcRef.current = pc;
@@ -307,14 +355,14 @@ export default function Messenger({ token, currentUser, onLogout }) {
     return pc;
   };
 
-  const startOutgoingCall = async (contact) => {
+  const startOutgoingCall = async (contact, callType = 'video') => {
     if (!contact || callStateRef.current) return;
     const callId = crypto.randomUUID();
     pendingCallPeerRef.current = contact.id;
     pendingCallIdRef.current = callId;
-    setCallNotice(`Calling ${contact.displayName}...`);
-    setCallState({ mode: 'outgoing', peerId: contact.id, peerName: contact.displayName, callId });
-    socketRef.current?.emit('call:initiate', { toId: contact.id, callId });
+    setCallNotice(`${callType === 'audio' ? 'Audio' : 'Video'} Calling ${contact.displayName}...`);
+    setCallState({ mode: 'outgoing', peerId: contact.id, peerName: contact.displayName, callId, callType });
+    socketRef.current?.emit('call:initiate', { toId: contact.id, callId, callType });
 
     if (callTimerRef.current) clearTimeout(callTimerRef.current);
     callTimerRef.current = setTimeout(() => {
@@ -329,12 +377,13 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const acceptIncomingCall = async (incoming) => {
     try {
       if (callTimerRef.current) clearTimeout(callTimerRef.current);
+      const callType = incoming.callType || 'video';
       pendingCallPeerRef.current = incoming.fromId;
       pendingCallIdRef.current = incoming.callId;
-      setCallNotice(`Connected with ${incoming.fromName}`);
-      setCallState({ mode: 'active', peerId: incoming.fromId, peerName: incoming.fromName, callId: incoming.callId });
+      setCallNotice(`Connecting with ${incoming.fromName}...`);
+      setCallState({ mode: 'connecting', peerId: incoming.fromId, peerName: incoming.fromName, callId: incoming.callId, callType });
       socketRef.current?.emit('call:accept', { callId: incoming.callId, toId: incoming.fromId });
-      await ensurePeerConnection(incoming.fromId);
+      await ensurePeerConnection(incoming.fromId, callType);
     } catch (e) {
       setCallNotice(e.message);
       cleanupCall();
@@ -392,10 +441,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
           fileSize: payload.size || null,
           replyTo: payload.replyTo || null
         };
-        const bucket = messagesByPeerRef.current.get(msg.fromId) || [];
-        messagesByPeerRef.current.set(msg.fromId, [...bucket, next]);
+        appendMessage(msg.fromId, next);
         if (isChatActive(msg.fromId)) {
-          setMessages((prev) => [...prev, next]);
           socket.emit('message:seen', { otherId: msg.fromId });
         } else {
           setContacts((prev) =>
@@ -463,44 +510,53 @@ export default function Messenger({ token, currentUser, onLogout }) {
     socket.on('call:accepted', async ({ byId }) => {
       if (!pendingCallPeerRef.current || byId !== pendingCallPeerRef.current) return;
       try {
-        setCallState((prev) => (prev ? { ...prev, mode: 'active' } : prev));
-        const pc = await ensurePeerConnection(byId);
+        const currentType = callStateRef.current?.callType || 'video';
+        setCallState((prev) => (prev ? { ...prev, mode: 'connecting' } : prev));
+        const pc = await ensurePeerConnection(byId, currentType);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('call:signal', {
           toId: byId,
           data: { sdp: pc.localDescription }
         });
-        setCallNotice('Call connected.');
       } catch (e) {
         setCallNotice(e.message);
+        cleanupCall();
       }
     });
 
-    socket.on('call:rejected', () => {
-      setCallNotice('Call rejected.');
+    socket.on('call:rejected', ({ reason } = {}) => {
+      setCallNotice(reason === 'busy' ? 'User is currently busy' : 'Call rejected');
       cleanupCall();
     });
 
     socket.on('call:signal', async ({ fromId, data }) => {
       try {
+        const currentType = callStateRef.current?.callType || 'video';
         let pc = pcRef.current;
         if (!pc) {
-          pc = await ensurePeerConnection(fromId);
+          pc = await ensurePeerConnection(fromId, currentType);
         }
         if (data.sdp) {
           await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          while (iceQueueRef.current.length > 0) {
+            const cand = iceQueueRef.current.shift();
+            try { await pc.addIceCandidate(cand); } catch { }
+          }
           if (data.sdp.type === 'offer') {
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             socket.emit('call:signal', { toId: fromId, data: { sdp: pc.localDescription } });
-            setCallState((prev) => prev ? { ...prev, mode: 'active' } : prev);
-            setCallNotice('Call connected.');
           }
+          setCallState((prev) => (prev ? { ...prev, mode: 'active' } : prev));
+          setCallNotice('Call connected');
         } else if (data.candidate) {
-          try {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } catch { }
+          const cand = new RTCIceCandidate(data.candidate);
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            try { await pc.addIceCandidate(cand); } catch { }
+          } else {
+            iceQueueRef.current.push(cand);
+          }
         }
       } catch (e) {
         setCallNotice(e.message);
@@ -669,9 +725,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
           createdAt: new Date().toISOString(),
           seenAt: null
         };
-        setMessages((prev) => [...prev, newMsg]);
-        const bucket = messagesByPeerRef.current.get(selectedContact.id) || [];
-        messagesByPeerRef.current.set(selectedContact.id, [...bucket, newMsg]);
+        appendMessage(selectedContact.id, newMsg);
       }
       refreshContacts();
     });
@@ -717,55 +771,70 @@ export default function Messenger({ token, currentUser, onLogout }) {
       setError('File is too large (max ~14MB).');
       return;
     }
+    const targetPeerId = selectedContact.id;
     const kind = file.type.startsWith('image/') ? 'photo' : 'document';
-    const dataUrl = await fileToDataUrl(file);
-    const plain = { kind, dataUrl, name: file.name, mimeType: file.type, size: file.size };
-    if (replyTarget) {
-      plain.replyTo = {
-        id: replyTarget.id,
-        kind: replyTarget.payloadKind,
-        preview: replyPreviewFor(replyTarget.payloadKind, replyTarget.content, replyTarget.fileName),
-        fromMe: replyTarget.mine
-      };
-    }
-    let payload;
-    try {
-      payload = await encryptFor(selectedContact.id, plain);
-    } catch (e) {
-      setError(e.message);
-      return;
-    }
-    const tempReply = plain.replyTo || null;
+    const tempId = 'temp_' + crypto.randomUUID();
+    const previewUrl = kind === 'photo' ? URL.createObjectURL(file) : null;
+    const tempReply = replyTarget ? {
+      id: replyTarget.id,
+      kind: replyTarget.payloadKind,
+      preview: replyPreviewFor(replyTarget.payloadKind, replyTarget.content, replyTarget.fileName),
+      fromMe: replyTarget.mine
+    } : null;
+
     setReplyTarget(null);
-    socketRef.current?.emit('message:send', {
-      toId: selectedContact.id,
+
+    // STEP 1: Optimistic Immediate Local Message Insertion
+    const tempMsg = {
+      id: tempId,
+      fromId: currentUser.id,
+      toId: targetPeerId,
+      mine: true,
       type: kind,
+      payloadKind: kind,
+      content: previewUrl || '',
       fileName: file.name,
       mimeType: file.type,
-      ...payload
-    }, (ack) => {
-      if (ack?.ok) {
-        const newMsg = {
-          id: ack.messageId,
-          fromId: currentUser.id,
-          toId: selectedContact.id,
-          mine: true,
-          type: kind,
-          payloadKind: kind,
-          content: dataUrl,
-          fileName: file.name,
-          mimeType: file.type,
-          fileSize: file.size,
-          replyTo: tempReply,
-          createdAt: new Date().toISOString(),
-          seenAt: null
-        };
-        setMessages((prev) => [...prev, newMsg]);
-        const bucket = messagesByPeerRef.current.get(selectedContact.id) || [];
-        messagesByPeerRef.current.set(selectedContact.id, [...bucket, newMsg]);
-      }
-      refreshContacts();
-    });
+      fileSize: file.size,
+      replyTo: tempReply,
+      createdAt: new Date().toISOString(),
+      status: 'uploading',
+      seenAt: null
+    };
+
+    appendMessage(targetPeerId, tempMsg);
+
+    // STEP 2: Background Base64 Conversion, Encryption & Socket Transport
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      const plain = { kind, dataUrl, name: file.name, mimeType: file.type, size: file.size };
+      if (tempReply) plain.replyTo = tempReply;
+
+      const payload = await encryptFor(targetPeerId, plain);
+
+      socketRef.current?.emit('message:send', {
+        toId: targetPeerId,
+        type: kind,
+        fileName: file.name,
+        mimeType: file.type,
+        ...payload
+      }, (ack) => {
+        if (ack?.ok) {
+          // STEP 3: Replace tempMsg with server ack message!
+          updateMessage(targetPeerId, tempId, {
+            id: ack.messageId,
+            content: dataUrl,
+            status: 'sent'
+          });
+        } else {
+          updateMessage(targetPeerId, tempId, { status: 'failed' });
+        }
+        refreshContacts();
+      });
+    } catch (e) {
+      console.error("Image upload/send error:", e);
+      updateMessage(targetPeerId, tempId, { status: 'failed' });
+    }
   };
 
   const copyMessage = async (msg) => {
@@ -891,10 +960,36 @@ export default function Messenger({ token, currentUser, onLogout }) {
                 </div>
               </div>
 
-              <div className="chat-head-actions">
-                <button className="ghost-btn" onClick={() => startOutgoingCall(selectedContact)} disabled={Boolean(callState)}>
+              <div className="chat-head-actions" style={{ position: 'relative' }}>
+                <button
+                  className="ghost-btn"
+                  onClick={() => setShowCallMenu((v) => !v)}
+                  disabled={Boolean(callState)}
+                >
                   📞 Call
                 </button>
+
+                {showCallMenu ? (
+                  <div className="call-menu-popover" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => {
+                        setShowCallMenu(false);
+                        startOutgoingCall(selectedContact, 'audio');
+                      }}
+                    >
+                      📞 Audio Call
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCallMenu(false);
+                        startOutgoingCall(selectedContact, 'video');
+                      }}
+                    >
+                      🎥 Video Call
+                    </button>
+                  </div>
+                ) : null}
+
                 <button className="danger-btn" onClick={logout}>⚡ Panic</button>
               </div>
             </header>
@@ -1104,22 +1199,28 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, localVideoRef, remo
     }
   };
 
+  const isAudioCall = callState.callType === 'audio';
+
   return (
     <div className="video-call-overlay">
       <div className="video-call-header">
         <span className="video-call-name">
-          {callState.mode === 'incoming' ? `Incoming Video Call from ${callState.fromName}` : callState.peerName}
+          {callState.mode === 'incoming'
+            ? `Incoming ${isAudioCall ? 'Audio' : 'Video'} Call from ${callState.fromName}`
+            : callState.peerName}
         </span>
         <span className="video-call-status">
           {callState.mode === 'incoming'
             ? 'Ringing...'
             : callState.mode === 'outgoing'
               ? 'Calling...'
-              : '🔒 End-to-End Encrypted Video Call'}
+              : callState.mode === 'connecting'
+                ? 'Connecting...'
+                : `🔒 End-to-End Encrypted ${isAudioCall ? 'Audio' : 'Video'} Call`}
         </span>
       </div>
 
-      {callState.mode === 'active' ? (
+      {callState.mode === 'active' && !isAudioCall ? (
         <div className="video-viewport">
           <video ref={remoteVideoRef} autoPlay playsInline className="remote-video" />
           <video ref={localVideoRef} autoPlay muted playsInline className="local-video" />
@@ -1127,11 +1228,18 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, localVideoRef, remo
         </div>
       ) : (
         <div className="call-card">
-          <div className="small-label">1-to-1 Video Call</div>
+          <div className="small-label">1-to-1 {isAudioCall ? 'Audio' : 'Video'} Call</div>
           <h3>{callState.mode === 'incoming' ? callState.fromName : callState.peerName}</h3>
           <div className="muted">
-            {callState.mode === 'incoming' ? 'Incoming video call...' : 'Calling...'}
+            {callState.mode === 'incoming'
+              ? `Incoming ${isAudioCall ? 'audio' : 'video'} call...`
+              : callState.mode === 'connecting'
+                ? 'Connecting WebRTC media...'
+                : callState.mode === 'outgoing'
+                  ? 'Calling...'
+                  : 'Connected'}
           </div>
+          <audio ref={remoteAudioRef} autoPlay />
         </div>
       )}
 
@@ -1152,9 +1260,11 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, localVideoRef, remo
                 <button className={`call-ctrl-btn ${isMuted ? 'active' : ''}`} onClick={toggleMute}>
                   {isMuted ? '🔇 Unmute' : '🎤 Mute'}
                 </button>
-                <button className={`call-ctrl-btn ${isCameraOff ? 'active' : ''}`} onClick={toggleCamera}>
-                  {isCameraOff ? '📷 Cam On' : '📷 Cam Off'}
-                </button>
+                {!isAudioCall ? (
+                  <button className={`call-ctrl-btn ${isCameraOff ? 'active' : ''}`} onClick={toggleCamera}>
+                    {isCameraOff ? '📷 Cam On' : '📷 Cam Off'}
+                  </button>
+                ) : null}
               </>
             ) : null}
             <button className="danger-btn end-btn" onClick={onEnd}>
@@ -1291,8 +1401,17 @@ function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, s
 
         <div className="bubble-meta">
           {m.edited ? <span className="edited-tag">edited</span> : null}
+          {m.status === 'uploading' ? (
+            <span className="status-tag uploading">Uploading...</span>
+          ) : m.status === 'failed' ? (
+            <span className="status-tag failed">Upload failed</span>
+          ) : null}
           <span>{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          {m.mine ? <span>{m.seenAt ? 'Seen' : 'Sent'}</span> : null}
+          {m.mine ? (
+            <span>
+              {m.status === 'uploading' ? '⏳' : m.status === 'failed' ? '❌' : m.seenAt ? 'Seen' : 'Sent'}
+            </span>
+          ) : null}
         </div>
 
         {activeMenuId === m.id ? (
