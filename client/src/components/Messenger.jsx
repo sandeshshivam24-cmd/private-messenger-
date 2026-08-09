@@ -83,6 +83,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [viewingImage, setViewingImage] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
 
   const selectedContact = useMemo(
     () => contacts.find((u) => u.id === selectedId) || null,
@@ -191,6 +192,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
           messageIds: decrypted.filter((m) => !m.mine).map((m) => m.id)
         });
       }
+      setContacts((prev) => prev.map((u) => (u.id === userId ? { ...u, unreadCount: 0 } : u)));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -495,7 +497,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
       clearTimeout(inactivityRef.current);
       inactivityRef.current = setTimeout(() => {
         logout();
-      }, 120000);
+      }, 300000);
     };
 
     const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'click', 'mousemove'];
@@ -618,6 +620,33 @@ export default function Messenger({ token, currentUser, onLogout }) {
       }
       refreshContacts();
     });
+  };
+
+  const handleFileSelect = (file) => {
+    if (!file) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setError('File is too large (max ~14MB).');
+      return;
+    }
+    const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+    setSelectedFile({
+      file,
+      previewUrl,
+      name: file.name,
+      kind: file.type.startsWith('image/') ? 'photo' : 'document'
+    });
+  };
+
+  const handleSend = async () => {
+    if (!selectedContact) return;
+    if (selectedFile) {
+      const fileToSend = selectedFile.file;
+      setSelectedFile(null);
+      await sendFile(fileToSend);
+    }
+    if (composer.trim()) {
+      await sendText();
+    }
   };
 
   const MAX_FILE_BYTES = 14 * 1024 * 1024; // ~14MB raw (base64 adds ~33%, stays under the 20MB transport limit)
@@ -842,6 +871,23 @@ export default function Messenger({ token, currentUser, onLogout }) {
               {callNotice ? <div className="call-note">{callNotice}</div> : null}
             </section>
 
+            {selectedFile ? (
+              <div className="composer-context">
+                <div className="composer-context-text">
+                  <span className="small-label">Selected attachment</span>
+                  {selectedFile.kind === 'photo' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <img src={selectedFile.previewUrl} alt="Preview" className="composer-image-preview" />
+                      <span>{selectedFile.name}</span>
+                    </div>
+                  ) : (
+                    <span>📎 {selectedFile.name}</span>
+                  )}
+                </div>
+                <button className="ghost-btn" onClick={() => setSelectedFile(null)}>✕</button>
+              </div>
+            ) : null}
+
             {replyTarget ? (
               <div className="composer-context">
                 <div className="composer-context-text">
@@ -878,7 +924,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
                   capture="environment"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) sendFile(file);
+                    if (file) handleFileSelect(file);
                     e.target.value = '';
                   }}
                 />
@@ -888,9 +934,10 @@ export default function Messenger({ token, currentUser, onLogout }) {
                 📎
                 <input
                   type="file"
+                  accept="image/*,video/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
-                    if (file) sendFile(file);
+                    if (file) handleFileSelect(file);
                     e.target.value = '';
                   }}
                 />
@@ -922,12 +969,18 @@ export default function Messenger({ token, currentUser, onLogout }) {
                   }, 1500);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') sendText();
+                  if (e.key === 'Enter') handleSend();
                 }}
                 placeholder={editingMessage ? 'Edit message...' : 'Type message...'}
               />
 
-              <button className="primary-btn send-btn" onClick={sendText}>{editingMessage ? '✓' : '➤'}</button>
+              <button
+                className="primary-btn send-btn"
+                onClick={handleSend}
+                disabled={!composer.trim() && !selectedFile}
+              >
+                {editingMessage ? '✓' : '➤'}
+              </button>
             </footer>
           </>
         ) : (
@@ -1007,27 +1060,45 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, remoteAudioRef }) {
 function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, startReply, copyMessage, startEdit, deleteMessage, formatFileSize, onOpenImage, scrollRef }) {
   const [dragX, setDragX] = useState(0);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const isHorizontalRef = useRef(false);
   const draggingRef = useRef(false);
   const SWIPE_THRESHOLD = 55;
   const MAX_DRAG = 80;
 
   const onTouchStart = (e) => {
     startXRef.current = e.touches[0].clientX;
+    startYRef.current = e.touches[0].clientY;
     draggingRef.current = true;
+    isHorizontalRef.current = false;
   };
 
   const onTouchMove = (e) => {
     if (!draggingRef.current) return;
-    const delta = e.touches[0].clientX - startXRef.current;
-    // "theirs" bubbles swipe right → reply icon on left; "mine" bubbles swipe left → icon on right
-    const clamped = mine
-      ? Math.max(-MAX_DRAG, Math.min(0, delta))
-      : Math.max(0, Math.min(MAX_DRAG, delta));
-    setDragX(clamped);
+    const deltaX = e.touches[0].clientX - startXRef.current;
+    const deltaY = e.touches[0].clientY - startYRef.current;
+
+    if (!isHorizontalRef.current) {
+      if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 6) {
+        isHorizontalRef.current = true;
+      } else if (Math.abs(deltaY) > 6) {
+        draggingRef.current = false;
+        setDragX(0);
+        return;
+      }
+    }
+
+    if (isHorizontalRef.current) {
+      const clamped = mine
+        ? Math.max(-MAX_DRAG, Math.min(0, deltaX))
+        : Math.max(0, Math.min(MAX_DRAG, deltaX));
+      setDragX(clamped);
+    }
   };
 
   const onTouchEnd = () => {
     draggingRef.current = false;
+    isHorizontalRef.current = false;
     if (Math.abs(dragX) >= SWIPE_THRESHOLD) {
       startReply(m);
     }

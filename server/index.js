@@ -414,6 +414,8 @@ io.on('connection', (socket) => {
         seenMessageIds: Array.isArray(messageIds) ? messageIds : []
       });
     }
+
+    socket.emit('contacts:list', { contacts: serializeContacts(user.id) });
   });
 
   socket.on('message:edit', ({ messageId, toId, encryptedPayload, iv } = {}, ack = () => {}) => {
