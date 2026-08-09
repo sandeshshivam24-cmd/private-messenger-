@@ -59,6 +59,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const pendingCallPeerRef = useRef(null);
   const pendingCallIdRef = useRef(null);
   const selectedIdRef = useRef(null);
+  const mobileChatOpenRef = useRef(false);
+  const isMobileRef = useRef(window.innerWidth <= 768);
   const identityRef = useRef(null);
   const sharedKeysRef = useRef(new Map()); // peerId -> { fp, key }
   const contactsRef = useRef([]);
@@ -92,6 +94,20 @@ export default function Messenger({ token, currentUser, onLogout }) {
   }, [selectedId]);
 
   useEffect(() => {
+    mobileChatOpenRef.current = mobileChatOpen;
+  }, [mobileChatOpen]);
+
+  useEffect(() => {
+    isMobileRef.current = isMobile;
+  }, [isMobile]);
+
+  const isChatActive = (peerId) => {
+    if (selectedIdRef.current !== peerId) return false;
+    if (isMobileRef.current && !mobileChatOpenRef.current) return false;
+    return true;
+  };
+
+  useEffect(() => {
     contactsRef.current = contacts;
   }, [contacts]);
 
@@ -108,7 +124,11 @@ export default function Messenger({ token, currentUser, onLogout }) {
   };
 
   const encryptFor = async (peerId, plainObj) => {
-    const key = await getSharedKeyFor(peerId);
+    let key = await getSharedKeyFor(peerId);
+    if (!key) {
+      await refreshContacts();
+      key = await getSharedKeyFor(peerId);
+    }
     if (!key) throw new Error("Can't encrypt yet — waiting for this contact's key.");
     return encryptWithKey(key, JSON.stringify(plainObj));
   };
@@ -306,8 +326,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
       if (mounted) setContacts(nextContacts || []);
     });
 
-    socket.on('presence:update', ({ userId, online, lastSeen }) => {
-      setContacts((prev) => prev.map((u) => (u.id === userId ? { ...u, online, lastSeen } : u)));
+    socket.on('presence:update', ({ userId, online, lastSeen, publicKey }) => {
+      setContacts((prev) => prev.map((u) => (u.id === userId ? { ...u, online, lastSeen, ...(publicKey ? { publicKey } : {}) } : u)));
     });
 
     socket.on('message:deliver', async (msg) => {
@@ -327,7 +347,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
         };
         const bucket = messagesByPeerRef.current.get(msg.fromId) || [];
         messagesByPeerRef.current.set(msg.fromId, [...bucket, next]);
-        if (msg.fromId === selectedIdRef.current) {
+        if (isChatActive(msg.fromId)) {
           setMessages((prev) => [...prev, next]);
           socket.emit('message:seen', { otherId: msg.fromId });
         } else {
@@ -772,7 +792,10 @@ export default function Messenger({ token, currentUser, onLogout }) {
                 {isMobile && mobileChatOpen && (
                   <button
                     className="back-btn"
-                    onClick={() => setMobileChatOpen(false)}
+                    onClick={() => {
+                      setMobileChatOpen(false);
+                      setSelectedId(null);
+                    }}
                   >
                     ←
                   </button>
@@ -847,11 +870,12 @@ export default function Messenger({ token, currentUser, onLogout }) {
             ) : null}
 
             <footer className="composer">
-              <label className="photo-btn" title="Send photo">
+              <label className="photo-btn" title="Take photo with camera">
                 📷
                 <input
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) sendFile(file);
@@ -860,7 +884,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
                 />
               </label>
 
-              <label className="photo-btn" title="Send document">
+              <label className="photo-btn" title="Attach file or image">
                 📎
                 <input
                   type="file"

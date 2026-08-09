@@ -199,6 +199,16 @@ app.post('/api/keys', authRequired, (req, res) => {
   if (!publicKey || typeof publicKey !== 'object') return res.status(400).json({ error: 'publicKey (JWK object) required' });
   req.user.publicKey = publicKey;
   saveStore(store);
+
+  // Broadcast updated public key to all online users so key derivation works instantly
+  io.emit('presence:update', { userId: req.user.id, online: req.user.online, lastSeen: req.user.lastSeen, publicKey });
+  store.users.forEach((u) => {
+    const sid = socketsByUserId.get(u.id);
+    if (sid && io.sockets.sockets.get(sid)) {
+      io.to(sid).emit('contacts:list', { contacts: serializeContacts(u.id) });
+    }
+  });
+
   res.json({ ok: true });
 });
 
@@ -339,7 +349,7 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   const user = socket.user;
   markUserOnline(user.id, socket.id);
-  io.emit('presence:update', { userId: user.id, online: true, lastSeen: user.lastSeen });
+  io.emit('presence:update', { userId: user.id, online: true, lastSeen: user.lastSeen, publicKey: user.publicKey });
 
   socket.emit('contacts:list', { contacts: serializeContacts(user.id) });
 
@@ -367,18 +377,18 @@ io.on('connection', (socket) => {
       hiddenFor: []
     };
 
+    store.messages.push(msg);
+    saveStore(store);
+
     const recipientSocketId = socketsByUserId.get(toId);
     if (recipientSocketId && io.sockets.sockets.get(recipientSocketId)) {
       io.to(recipientSocketId).emit('message:deliver', msg);
       io.to(socket.id).emit('message:delivered', { messageId: msg.id, online: true });
       ack({ ok: true, delivered: true, messageId: msg.id });
-      return;
+    } else {
+      io.to(socket.id).emit('message:delivered', { messageId: msg.id, online: false });
+      ack({ ok: true, delivered: false, messageId: msg.id });
     }
-
-    store.messages.push(msg);
-    saveStore(store);
-    io.to(socket.id).emit('message:delivered', { messageId: msg.id, online: false });
-    ack({ ok: true, delivered: false, messageId: msg.id });
   });
 
   socket.on('message:seen', ({ otherId, messageIds = [] } = {}) => {
