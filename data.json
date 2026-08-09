@@ -22,8 +22,8 @@
       "role": "user",
       "enabled": true,
       "online": false,
-      "lastSeen": "2026-08-09T19:12:27.902Z",
-      "sessionId": "b9c7b087-fbe6-442b-9f73-aa6a9f46deb7",
+      "lastSeen": "2026-08-09T19:28:45.742Z",
+      "sessionId": "5d9cbd46-265d-4b7d-bd67-8f27e24a8165",
       "initials": "RA",
       "showLastSeen": true,
       "publicKey": null
@@ -36,8 +36,8 @@
       "role": "user",
       "enabled": true,
       "online": false,
-      "lastSeen": "2026-08-09T19:12:27.904Z",
-      "sessionId": "00839e98-3117-40a3-bf9e-557fbed636ea",
+      "lastSeen": "2026-08-09T19:28:45.744Z",
+      "sessionId": "9737759c-59fd-4fdf-ac74-125f8f84436e",
       "initials": "AM",
       "showLastSeen": true,
       "publicKey": null
@@ -50,8 +50,8 @@
       "role": "user",
       "enabled": true,
       "online": true,
-      "lastSeen": "2026-08-09T19:12:20.653Z",
-      "sessionId": "0c93f6e1-07c6-4f9b-ab42-c351b7b0f1cf",
+      "lastSeen": "2026-08-09T19:28:39.786Z",
+      "sessionId": "568463b5-1d41-4cbb-be07-9f96217503ff",
       "initials": "NE",
       "showLastSeen": true,
       "publicKey": null
@@ -78,8 +78,8 @@
       "role": "user",
       "enabled": true,
       "online": true,
-      "lastSeen": "2026-08-09T19:12:20.800Z",
-      "sessionId": "09eb46cc-7068-4a56-9aff-6f86f39d9502",
+      "lastSeen": "2026-08-09T19:28:39.935Z",
+      "sessionId": "e3a19c72-b8ac-44c3-8688-a46e9ccc0761",
       "initials": "KA",
       "showLastSeen": true,
       "publicKey": null
@@ -115,20 +115,6 @@
       "hiddenFor": []
     },
     {
-      "id": "m_00005",
-      "pairKey": "u_aman__u_rahul",
-      "fromId": "u_rahul",
-      "toId": "u_aman",
-      "type": "text",
-      "encryptedPayload": "aman_msg_payload",
-      "iv": "aman_iv",
-      "fileName": null,
-      "mimeType": null,
-      "createdAt": "2026-08-09T19:12:20.886Z",
-      "seenAt": "2026-08-09T19:12:27.375Z",
-      "hiddenFor": []
-    },
-    {
       "id": "m_00006",
       "pairKey": "u_neha__u_rahul",
       "fromId": "u_rahul",
@@ -157,7 +143,49 @@
       "hiddenFor": []
     },
     {
-      "id": "m_00008",
+      "id": "m_00009",
+      "pairKey": "u_aman__u_rahul",
+      "fromId": "u_rahul",
+      "toId": "u_aman",
+      "type": "text",
+      "encryptedPayload": "aman_msg_payload",
+      "iv": "aman_iv",
+      "fileName": null,
+      "mimeType": null,
+      "createdAt": "2026-08-09T19:28:40.007Z",
+      "seenAt": "2026-08-09T19:28:45.209Z",
+      "hiddenFor": []
+    },
+    {
+      "id": "m_00010",
+      "pairKey": "u_neha__u_rahul",
+      "fromId": "u_rahul",
+      "toId": "u_neha",
+      "type": "text",
+      "encryptedPayload": "neha_msg_payload",
+      "iv": "neha_iv",
+      "fileName": null,
+      "mimeType": null,
+      "createdAt": "2026-08-09T19:28:40.013Z",
+      "seenAt": null,
+      "hiddenFor": []
+    },
+    {
+      "id": "m_00011",
+      "pairKey": "u_kajal__u_rahul",
+      "fromId": "u_rahul",
+      "toId": "u_kajal",
+      "type": "text",
+      "encryptedPayload": "kajal_msg_payload",
+      "iv": "kajal_iv",
+      "fileName": null,
+      "mimeType": null,
+      "createdAt": "2026-08-09T19:28:40.016Z",
+      "seenAt": null,
+      "hiddenFor": []
+    },
+    {
+      "id": "m_00012",
       "pairKey": "u_aman__u_rahul",
       "fromId": "u_rahul",
       "toId": "u_aman",
@@ -166,11 +194,11 @@
       "iv": "test_iv",
       "fileName": null,
       "mimeType": null,
-      "createdAt": "2026-08-09T19:12:26.837Z",
-      "seenAt": "2026-08-09T19:12:27.375Z",
+      "createdAt": "2026-08-09T19:28:44.677Z",
+      "seenAt": "2026-08-09T19:28:45.209Z",
       "hiddenFor": []
     }
   ],
   "nextUserId": 7,
-  "nextMessageId": 9
+  "nextMessageId": 13
 }

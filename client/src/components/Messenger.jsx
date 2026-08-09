@@ -174,9 +174,20 @@ export default function Messenger({ token, currentUser, onLogout }) {
   };
 
   const decryptFrom = async (peerId, encryptedPayload, iv) => {
-    const key = await getSharedKeyFor(peerId);
-    if (!key) throw new Error('no-key');
-    return safeParse(await decryptWithKey(key, encryptedPayload, iv));
+    if (!encryptedPayload || !iv) return null;
+    let key = await getSharedKeyFor(peerId);
+    if (!key) {
+      await refreshContacts();
+      key = await getSharedKeyFor(peerId);
+    }
+    if (!key) return null;
+    try {
+      const raw = await decryptWithKey(key, encryptedPayload, iv);
+      return safeParse(raw);
+    } catch (err) {
+      console.warn('Decryption error for peer', peerId, err);
+      return null;
+    }
   };
 
   const publishPublicKey = async () => {
@@ -199,30 +210,64 @@ export default function Messenger({ token, currentUser, onLogout }) {
     try {
       const data = await apiFetch(`/conversations/${userId}`, { token });
       const decrypted = await Promise.all((data.messages || []).map(async (msg) => {
-        let payload = { kind: msg.type || 'text', text: '' };
-        try {
-          payload = await decryptFrom(msg.fromId === currentUser.id ? msg.toId : msg.fromId, msg.encryptedPayload, msg.iv);
-        } catch {
-          payload = { kind: msg.type || 'text', text: '[unable to decrypt]' };
+        const peerId = msg.fromId === currentUser.id ? msg.toId : msg.fromId;
+        const payload = await decryptFrom(peerId, msg.encryptedPayload, msg.iv);
+
+        const payloadKind = payload?.kind || msg.type || 'text';
+        const isFile = payloadKind === 'photo' || payloadKind === 'document';
+        let content = '';
+
+        if (payload) {
+          content = isFile ? payload.dataUrl : payload.text;
+        } else {
+          if (msg.type === 'photo' || msg.type === 'document') {
+            content = '';
+          } else {
+            content = '[unable to decrypt]';
+          }
         }
-        const isFile = payload.kind === 'photo' || payload.kind === 'document';
+
         return {
           ...msg,
           mine: msg.fromId === currentUser.id,
-          content: isFile ? payload.dataUrl : payload.text,
-          payloadKind: payload.kind || msg.type || 'text',
-          fileName: payload.name || msg.fileName || null,
-          mimeType: payload.mimeType || msg.mimeType || null,
-          fileSize: payload.size || null,
-          replyTo: payload.replyTo || null
+          content,
+          payloadKind,
+          fileName: payload?.name || msg.fileName || null,
+          mimeType: payload?.mimeType || msg.mimeType || null,
+          fileSize: payload?.size || null,
+          replyTo: payload?.replyTo || null
         };
       }));
 
       const filtered = decrypted.filter(
         (m) => (m.fromId === userId && m.toId === currentUser.id) || (m.fromId === currentUser.id && m.toId === userId)
       );
+
       const map = new Map();
-      [...cached, ...filtered].forEach((m) => map.set(m.id, m));
+      cached.forEach((m) => map.set(m.id, m));
+
+      filtered.forEach((s) => {
+        const existing = map.get(s.id);
+        if (existing) {
+          map.set(s.id, {
+            ...s,
+            content: existing.content || s.content,
+            payloadKind: s.payloadKind || existing.payloadKind,
+            status: existing.status === 'uploading' ? 'uploading' : 'sent'
+          });
+        } else {
+          const tempMatch = Array.from(map.values()).find(
+            (m) => m.id.startsWith('temp_') && m.fileName === s.fileName && m.fileSize === s.fileSize
+          );
+          if (tempMatch) {
+            map.delete(tempMatch.id);
+            map.set(s.id, { ...tempMatch, ...s, content: tempMatch.content || s.content, status: 'sent' });
+          } else {
+            map.set(s.id, s);
+          }
+        }
+      });
+
       const merged = Array.from(map.values()).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       messagesByPeerRef.current.set(userId, merged);
       if (selectedIdRef.current === userId) {
@@ -737,6 +782,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
       setError('File is too large (max ~14MB).');
       return;
     }
+    setComposer('');
     const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
     setSelectedFile({
       file,
@@ -751,7 +797,9 @@ export default function Messenger({ token, currentUser, onLogout }) {
     if (selectedFile) {
       const fileToSend = selectedFile.file;
       setSelectedFile(null);
+      setComposer('');
       await sendFile(fileToSend);
+      return;
     }
     if (composer.trim()) {
       await sendText();
