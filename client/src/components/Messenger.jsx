@@ -55,9 +55,13 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const scrollRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
   const pendingCallPeerRef = useRef(null);
   const pendingCallIdRef = useRef(null);
+  const callTimerRef = useRef(null);
+  const callStateRef = useRef(null);
   const selectedIdRef = useRef(null);
   const mobileChatOpenRef = useRef(false);
   const isMobileRef = useRef(window.innerWidth <= 768);
@@ -91,8 +95,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
   );
 
   useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
+    callStateRef.current = callState;
+  }, [callState]);
 
   useEffect(() => {
     mobileChatOpenRef.current = mobileChatOpen;
@@ -154,9 +158,9 @@ export default function Messenger({ token, currentUser, onLogout }) {
 
   const loadChat = async (userId) => {
     if (!userId) return;
-    const cached = messagesByPeerRef.current.get(userId);
-    if (cached) setMessages(cached);
-    setLoadingChat(!cached);
+    const cached = messagesByPeerRef.current.get(userId) || [];
+    setMessages(cached);
+    setLoadingChat(!cached.length);
     try {
       const data = await apiFetch(`/conversations/${userId}`, { token });
       const decrypted = await Promise.all((data.messages || []).map(async (msg) => {
@@ -178,18 +182,22 @@ export default function Messenger({ token, currentUser, onLogout }) {
           replyTo: payload.replyTo || null
         };
       }));
-      setMessages((prev) => {
-        const base = prev.length && prev[0] && (prev[0].fromId === userId || prev[0].toId === userId) ? prev : (cached || []);
-        const map = new Map();
-        [...decrypted, ...base].forEach((m) => map.set(m.id, m));
-        const merged = Array.from(map.values()).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        messagesByPeerRef.current.set(userId, merged);
-        return merged;
-      });
+
+      const filtered = decrypted.filter(
+        (m) => (m.fromId === userId && m.toId === currentUser.id) || (m.fromId === currentUser.id && m.toId === userId)
+      );
+      const map = new Map();
+      [...cached, ...filtered].forEach((m) => map.set(m.id, m));
+      const merged = Array.from(map.values()).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      messagesByPeerRef.current.set(userId, merged);
+      if (selectedIdRef.current === userId) {
+        setMessages(merged);
+      }
+
       if (socketRef.current) {
         socketRef.current.emit('message:seen', {
           otherId: userId,
-          messageIds: decrypted.filter((m) => !m.mine).map((m) => m.id)
+          messageIds: filtered.filter((m) => !m.mine).map((m) => m.id)
         });
       }
       setContacts((prev) => prev.map((u) => (u.id === userId ? { ...u, unreadCount: 0 } : u)));
@@ -215,6 +223,10 @@ export default function Messenger({ token, currentUser, onLogout }) {
   };
 
   const cleanupCall = () => {
+    if (callTimerRef.current) {
+      clearTimeout(callTimerRef.current);
+      callTimerRef.current = null;
+    }
     if (pcRef.current) {
       pcRef.current.ontrack = null;
       pcRef.current.onicecandidate = null;
@@ -224,6 +236,12 @@ export default function Messenger({ token, currentUser, onLogout }) {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
     }
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = null;
@@ -244,8 +262,12 @@ export default function Messenger({ token, currentUser, onLogout }) {
   };
 
   const ensurePeerConnection = async (peerId) => {
+    if (pcRef.current) return pcRef.current;
+
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
+      iceServers: [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+      ]
     });
 
     pc.onicecandidate = (event) => {
@@ -258,14 +280,27 @@ export default function Messenger({ token, currentUser, onLogout }) {
     };
 
     pc.ontrack = (event) => {
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.srcObject = event.streams[0];
+      if (event.streams && event.streams[0]) {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+        }
       }
     };
 
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    localStreamRef.current = stream;
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    } catch (err) {
+      console.warn("Camera/Mic getUserMedia error:", err);
+      throw new Error('Camera or microphone permission is required for a video call.');
+    }
 
     pcRef.current = pc;
     pendingCallPeerRef.current = peerId;
@@ -273,17 +308,27 @@ export default function Messenger({ token, currentUser, onLogout }) {
   };
 
   const startOutgoingCall = async (contact) => {
-    if (!contact || callState) return;
+    if (!contact || callStateRef.current) return;
     const callId = crypto.randomUUID();
     pendingCallPeerRef.current = contact.id;
     pendingCallIdRef.current = callId;
     setCallNotice(`Calling ${contact.displayName}...`);
     setCallState({ mode: 'outgoing', peerId: contact.id, peerName: contact.displayName, callId });
     socketRef.current?.emit('call:initiate', { toId: contact.id, callId });
+
+    if (callTimerRef.current) clearTimeout(callTimerRef.current);
+    callTimerRef.current = setTimeout(() => {
+      if (callStateRef.current?.mode === 'outgoing') {
+        socketRef.current?.emit('call:end', { toId: contact.id, callId });
+        setCallNotice('No answer');
+        cleanupCall();
+      }
+    }, 30000);
   };
 
   const acceptIncomingCall = async (incoming) => {
     try {
+      if (callTimerRef.current) clearTimeout(callTimerRef.current);
       pendingCallPeerRef.current = incoming.fromId;
       pendingCallIdRef.current = incoming.callId;
       setCallNotice(`Connected with ${incoming.fromName}`);
@@ -407,6 +452,10 @@ export default function Messenger({ token, currentUser, onLogout }) {
     });
 
     socket.on('call:incoming', (incoming) => {
+      if (callStateRef.current) {
+        socket.emit('call:reject', { callId: incoming.callId, toId: incoming.fromId, reason: 'busy' });
+        return;
+      }
       setCallState({ mode: 'incoming', ...incoming });
       setCallNotice(`${incoming.fromName} is calling...`);
     });
@@ -483,10 +532,16 @@ export default function Messenger({ token, currentUser, onLogout }) {
   }, [contacts]);
 
   useEffect(() => {
-    if (selectedId) loadChat(selectedId);
+    if (selectedId) {
+      setMessages(messagesByPeerRef.current.get(selectedId) || []);
+      loadChat(selectedId);
+    } else {
+      setMessages([]);
+    }
     setReplyTarget(null);
     setEditingMessage(null);
     setActiveMenuId(null);
+    setSelectedFile(null);
     setShowEmoji(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -997,6 +1052,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
             onAccept={acceptIncomingCall}
             onReject={rejectIncomingCall}
             onEnd={endCall}
+            localVideoRef={localVideoRef}
+            remoteVideoRef={remoteVideoRef}
             remoteAudioRef={remoteAudioRef}
           />
         ) : null
@@ -1027,32 +1084,84 @@ export default function Messenger({ token, currentUser, onLogout }) {
   );
 }
 
-function CallOverlay({ callState, onAccept, onReject, onEnd, remoteAudioRef }) {
+function CallOverlay({ callState, onAccept, onReject, onEnd, localVideoRef, remoteVideoRef, remoteAudioRef }) {
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(false);
+
+  const toggleMute = () => {
+    if (localVideoRef.current?.srcObject) {
+      const audioTracks = localVideoRef.current.srcObject.getAudioTracks();
+      audioTracks.forEach((t) => (t.enabled = isMuted));
+      setIsMuted(!isMuted);
+    }
+  };
+
+  const toggleCamera = () => {
+    if (localVideoRef.current?.srcObject) {
+      const videoTracks = localVideoRef.current.srcObject.getVideoTracks();
+      videoTracks.forEach((t) => (t.enabled = isCameraOff));
+      setIsCameraOff(!isCameraOff);
+    }
+  };
+
   return (
-    <div className="call-overlay">
-      <div className="call-card">
-        <div className="small-label">Audio Call</div>
-        <h3>{callState.mode === 'incoming' ? `Incoming from ${callState.fromName}` : callState.peerName}</h3>
-        <div className="muted">
+    <div className="video-call-overlay">
+      <div className="video-call-header">
+        <span className="video-call-name">
+          {callState.mode === 'incoming' ? `Incoming Video Call from ${callState.fromName}` : callState.peerName}
+        </span>
+        <span className="video-call-status">
           {callState.mode === 'incoming'
-            ? 'Accept or reject the call.'
+            ? 'Ringing...'
             : callState.mode === 'outgoing'
-              ? 'Ringing...'
-              : 'Connected'}
-        </div>
+              ? 'Calling...'
+              : '🔒 End-to-End Encrypted Video Call'}
+        </span>
+      </div>
 
-        <audio ref={remoteAudioRef} autoPlay />
-
-        <div className="call-actions">
-          {callState.mode === 'incoming' ? (
-            <>
-              <button className="primary-btn" onClick={() => onAccept(callState)}>Accept</button>
-              <button className="danger-btn" onClick={() => onReject(callState)}>Reject</button>
-            </>
-          ) : (
-            <button className="danger-btn" onClick={onEnd}>End Call</button>
-          )}
+      {callState.mode === 'active' ? (
+        <div className="video-viewport">
+          <video ref={remoteVideoRef} autoPlay playsInline className="remote-video" />
+          <video ref={localVideoRef} autoPlay muted playsInline className="local-video" />
+          <audio ref={remoteAudioRef} autoPlay />
         </div>
+      ) : (
+        <div className="call-card">
+          <div className="small-label">1-to-1 Video Call</div>
+          <h3>{callState.mode === 'incoming' ? callState.fromName : callState.peerName}</h3>
+          <div className="muted">
+            {callState.mode === 'incoming' ? 'Incoming video call...' : 'Calling...'}
+          </div>
+        </div>
+      )}
+
+      <div className="video-call-actions">
+        {callState.mode === 'incoming' ? (
+          <>
+            <button className="primary-btn accept-btn" onClick={() => onAccept(callState)}>
+              📞 Accept
+            </button>
+            <button className="danger-btn reject-btn" onClick={() => onReject(callState)}>
+              ✕ Reject
+            </button>
+          </>
+        ) : (
+          <>
+            {callState.mode === 'active' ? (
+              <>
+                <button className={`call-ctrl-btn ${isMuted ? 'active' : ''}`} onClick={toggleMute}>
+                  {isMuted ? '🔇 Unmute' : '🎤 Mute'}
+                </button>
+                <button className={`call-ctrl-btn ${isCameraOff ? 'active' : ''}`} onClick={toggleCamera}>
+                  {isCameraOff ? '📷 Cam On' : '📷 Cam Off'}
+                </button>
+              </>
+            ) : null}
+            <button className="danger-btn end-btn" onClick={onEnd}>
+              🔴 End Call
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -7,7 +7,13 @@ export const dataFile = path.join(rootDir, 'data.json');
 
 export const loadStore = () => {
   if (!fs.existsSync(dataFile)) return null;
-  return JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
+  try {
+    const raw = fs.readFileSync(dataFile, 'utf-8');
+    if (!raw || !raw.trim()) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 };
 
 export const saveStore = (store) => {
