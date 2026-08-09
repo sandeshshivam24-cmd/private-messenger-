@@ -40,7 +40,7 @@ export default function App() {
     setLoading(true);
     setError('');
     try {
-      const data = await apiFetch('/api/me', { token: tok });
+      const data = await apiFetch('/me', { token: tok });
       setCurrentUser(data.user);
       setContacts(data.contacts || []);
       localStorage.setItem('pm_token', tok);
@@ -49,7 +49,7 @@ export default function App() {
       await publishPublicKey(tok, data.user.username);
 
       if (data.user.role === 'admin') {
-        const usersData = await apiFetch('/api/admin/users', { token: tok });
+        const usersData = await apiFetch('/admin/users', { token: tok });
         setAdminUsers(usersData.users || []);
       }
     } catch (err) {
@@ -64,6 +64,22 @@ export default function App() {
     if (token) loadSession(token);
     else setLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function setAppHeight() {
+      const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty('--app-height', `${vh}px`);
+    }
+
+    window.addEventListener('resize', setAppHeight);
+    window.visualViewport?.addEventListener('resize', setAppHeight);
+    setAppHeight();
+
+    return () => {
+      window.removeEventListener('resize', setAppHeight);
+      window.visualViewport?.removeEventListener('resize', setAppHeight);
+    };
   }, []);
 
   const handleLogin = async (username, password) => {
@@ -83,7 +99,7 @@ export default function App() {
       await publishPublicKey(data.token, data.user.username);
 
       if (data.user.role === 'admin') {
-        const usersData = await apiFetch('/api/admin/users', {
+        const usersData = await apiFetch('/admin/users', {
           token: data.token
         });
         setAdminUsers(usersData.users || []);
@@ -136,12 +152,4 @@ export default function App() {
       onLogout={clearAuth}
     />
   );
-  function setAppHeight() {
-    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-    document.documentElement.style.setProperty('--app-height', `${vh}px`);
-  }
-
-  window.addEventListener('resize', setAppHeight);
-  window.visualViewport?.addEventListener('resize', setAppHeight);
-  setAppHeight();
 }

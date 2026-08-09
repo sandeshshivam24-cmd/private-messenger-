@@ -80,6 +80,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [viewingImage, setViewingImage] = useState(null);
 
   const selectedContact = useMemo(
     () => contacts.find((u) => u.id === selectedId) || null,
@@ -451,7 +452,13 @@ export default function Messenger({ token, currentUser, onLogout }) {
 
   useEffect(() => {
     if (!contacts.length && socketRef.current) refreshContacts();
-  }, [contacts.length]);
+    if (selectedId) {
+      const contact = contacts.find((c) => c.id === selectedId);
+      if (contact?.publicKey) {
+        loadChat(selectedId);
+      }
+    }
+  }, [contacts]);
 
   useEffect(() => {
     if (selectedId) loadChat(selectedId);
@@ -538,6 +545,7 @@ export default function Messenger({ token, currentUser, onLogout }) {
       });
 
       clearTimeout(typingTimeoutRef.current);
+      return;
     }
 
     const plain = { kind: 'text', text: composer.trim() };
@@ -804,6 +812,8 @@ export default function Messenger({ token, currentUser, onLogout }) {
                   startEdit={startEdit}
                   deleteMessage={deleteMessage}
                   formatFileSize={formatFileSize}
+                  onOpenImage={(imgData) => setViewingImage(imgData)}
+                  scrollRef={scrollRef}
                 />
               ))}
               {callNotice ? <div className="call-note">{callNotice}</div> : null}
@@ -914,6 +924,28 @@ export default function Messenger({ token, currentUser, onLogout }) {
           />
         ) : null
       }
+
+      {viewingImage ? (
+        <div className="image-viewer-overlay" onClick={() => setViewingImage(null)}>
+          <button
+            className="image-viewer-close"
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewingImage(null);
+            }}
+            aria-label="Close image viewer"
+          >
+            ✕
+          </button>
+          <div className="image-viewer-content" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={viewingImage.src}
+              alt={viewingImage.fileName || 'Full view'}
+              className="image-viewer-img"
+            />
+          </div>
+        </div>
+      ) : null}
     </div >
   );
 }
@@ -948,7 +980,7 @@ function CallOverlay({ callState, onAccept, onReject, onEnd, remoteAudioRef }) {
     </div>
   );
 }
-function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, startReply, copyMessage, startEdit, deleteMessage, formatFileSize }) {
+function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, startReply, copyMessage, startEdit, deleteMessage, formatFileSize, onOpenImage, scrollRef }) {
   const [dragX, setDragX] = useState(0);
   const startXRef = useRef(0);
   const draggingRef = useRef(false);
@@ -980,6 +1012,12 @@ function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, s
 
   const showReplyIcon = Math.abs(dragX) > 12;
 
+  const replyWho = m.replyTo
+    ? (mine
+      ? (m.replyTo.fromMe ? 'You' : selectedContact?.displayName || 'Contact')
+      : (m.replyTo.fromMe ? selectedContact?.displayName || 'Contact' : 'You'))
+    : '';
+
   return (
     <div
       className={`bubble-row ${mine ? 'mine' : 'theirs'}`}
@@ -1010,13 +1048,26 @@ function MessageRow({ m, mine, selectedContact, activeMenuId, setActiveMenuId, s
       >
         {m.replyTo ? (
           <div className="reply-preview">
-            <span className="reply-who">{m.replyTo.fromMe === m.mine ? 'You' : (m.mine ? selectedContact.displayName : 'You')}</span>
+            <span className="reply-who">{replyWho}</span>
             <span className="reply-text">{m.replyTo.preview}</span>
           </div>
         ) : null}
 
         {m.payloadKind === 'photo' ? (
-          <img src={m.content} alt={m.fileName || 'photo'} className="bubble-image" />
+          <img
+            src={m.content}
+            alt={m.fileName || 'photo'}
+            className="bubble-image"
+            onLoad={() => {
+              if (scrollRef?.current) {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenImage?.({ src: m.content, fileName: m.fileName });
+            }}
+          />
         ) : m.payloadKind === 'document' ? (
           <a
             href={m.content}
